@@ -1,0 +1,14 @@
+{
+  "profiles": {
+    "AsposeIssueTest": {
+      "commandName": "Project",
+      "commandLineArgs": "--port 7232"
+    },
+    "Docker": {
+      "commandName": "Docker",
+      "launchUrl": "{Scheme}://{ServiceHost}:{ServicePort}",
+      "httpPort": 32762,
+      "useSSL": false
+    }
+  }
+}
