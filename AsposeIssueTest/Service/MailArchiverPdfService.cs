@@ -15,6 +15,10 @@ namespace DaVIS.MailArchiver.Services.Operations;
 public class MailArchiverPdfService {
 
   private readonly ILogger _logger;
+  private Font myFont;
+  private TextState style;
+  private Aspose.Pdf.PdfSaveOptions options;
+  private Aspose.Pdf.Optimization.OptimizationOptions optimizationOptions;
 
   public MailArchiverPdfService(ILogger logger) {
     _logger = logger;
@@ -41,6 +45,27 @@ public class MailArchiverPdfService {
     catch (Exception) {
       // not required for Win
     }
+    myFont = FontRepository.FindFont("Arial", FontStyles.Regular, true);
+    style = new TextState {
+      Font = myFont,
+      FontSize = (float)10.5,
+      FontStyle = FontStyles.Regular,
+      LineSpacing = 4
+    };
+    options = new Aspose.Pdf.PdfSaveOptions {
+      DefaultFontName = myFont.FontName
+    };
+    optimizationOptions = new Aspose.Pdf.Optimization.OptimizationOptions {
+      ImageCompressionOptions =
+        {
+                        CompressImages = true,
+                        ImageQuality = 75,
+                        Version = ImageCompressionVersion.Fast
+                    },
+      RemoveUnusedObjects = true,
+      RemoveUnusedStreams = true,
+      //UnembedFonts = true
+    };
   }
 
   public byte[] MakePdf(string html) {
@@ -93,7 +118,8 @@ public class MailArchiverPdfService {
     var options = new Aspose.Pdf.PdfSaveOptions {
       DefaultFontName = myFont.FontName
     };
-    var optimizationOptions = new OptimizationOptions {
+    var optimizationOptions = new Aspose.Pdf.Optimization.OptimizationOptions
+    {
       ImageCompressionOptions =
         {
                         CompressImages = true,
@@ -113,81 +139,29 @@ public class MailArchiverPdfService {
   }
 
   public byte[] MakePdfWithConvert(string html) {
-
+    byte[] pdf = null;
     // Open document
-    using var stream = new MemoryStream(Encoding.UTF8.GetBytes(html));
-    using var pdfDoc = new MemoryStream();
-    using var htmlDocument = new HTMLDocument(stream, "");
-
-    var provider = new MemoryStreamProvider(pdfDoc);
-    Converter.ConvertHTML(htmlDocument, new Aspose.Html.Saving.PdfSaveOptions(), provider);
-
-    var pdfDocument = new Document(pdfDoc);
-
-    var myFont = FontRepository.FindFont("Arial", FontStyles.Regular, true);
-    var style = new TextState {
-      Font = myFont,
-      FontSize = (float)10.5,
-      FontStyle = FontStyles.Regular,
-      LineSpacing = 4
-    };
-
-    // add page numbers and remove links
-    foreach (Page page in pdfDocument.Pages) {
-      //  Seitenzahlen
-      page.AddStamp(new TextStamp($"{page.Number}/{pdfDocument.Pages.Count}", style) {
-        BottomMargin = 10,
-        HorizontalAlignment = HorizontalAlignment.Center,
-        VerticalAlignment = VerticalAlignment.Bottom
-      });
-
-      page.Annotations.Delete();
+    using (var provider = new MemoryStreamProvider(style, options, optimizationOptions)) {
+      Converter.ConvertHTML(html, "", new Aspose.Html.Saving.PdfSaveOptions(), provider);
+      pdf = provider.ToArray();
     }
-
-    // save changed document
-    var options = new Aspose.Pdf.PdfSaveOptions {
-      DefaultFontName = myFont.FontName
-    };
-    var optimizationOptions = new OptimizationOptions {
-      ImageCompressionOptions =
-        {
-                        CompressImages = true,
-                        ImageQuality = 75,
-                        Version = ImageCompressionVersion.Fast
-                    },
-      RemoveUnusedObjects = true,
-      RemoveUnusedStreams = true,
-      //UnembedFonts = true
-    };
-    using var pdf = new MemoryStream();
-    pdfDocument.OptimizeSize = true;
-    pdfDocument.OptimizeResources(optimizationOptions);
-    pdfDocument.Save(pdf, options);
-
-    return pdf.ToArray();
-  }
-
-  public byte[] MakePdfWithConvertNoPages(string html) {
-
-    // Open document
-    using var stream = new MemoryStream(Encoding.UTF8.GetBytes(html));
-    using var pdfDoc = new MemoryStream();
-    using var htmlDocument = new HTMLDocument(stream, "");
-
-    var provider = new MemoryStreamProvider(pdfDoc);
-    Converter.ConvertHTML(htmlDocument, new Aspose.Html.Saving.PdfSaveOptions(), provider);
-
-    return pdfDoc.ToArray();
+    return pdf;
   }
 }
 
 class MemoryStreamProvider : ICreateStreamProvider {
   private readonly Stream _stream;
+  private readonly TextState _style;
+  private readonly PdfSaveOptions _options;
+  private readonly Aspose.Pdf.Optimization.OptimizationOptions _optimizationOptions;
+
   public MemoryStreamProvider() {
     _stream = new MemoryStream();
   }
-  public MemoryStreamProvider(MemoryStream stream) {
-    _stream = stream;
+  public MemoryStreamProvider(TextState style, PdfSaveOptions options, Aspose.Pdf.Optimization.OptimizationOptions optimizationOptions) : this() {    
+    _style = style;
+    _options = options;
+    _optimizationOptions = optimizationOptions;
   }
 
   public void Dispose() {
@@ -203,6 +177,29 @@ class MemoryStreamProvider : ICreateStreamProvider {
   }
 
   public void ReleaseStream(Stream stream) {
-    _stream.Flush();
+    stream.Flush();
+    var pdfDocument = new Document(stream);
+
+    // add page numbers and remove links
+    foreach (Page page in pdfDocument.Pages) {
+      //  Seitenzahlen
+      page.AddStamp(new TextStamp($"{page.Number}/{pdfDocument.Pages.Count}", _style) {
+        BottomMargin = 10,
+        HorizontalAlignment = HorizontalAlignment.Center,
+        VerticalAlignment = VerticalAlignment.Bottom
+      });
+
+      page.Annotations.Delete();
+    }
+
+    // save changed document
+    pdfDocument.OptimizeSize = true;
+    pdfDocument.OptimizeResources(_optimizationOptions);
+    pdfDocument.Save(stream, _options);
   }
+
+  public byte[] ToArray() {
+    return ((MemoryStream)_stream).ToArray();
+  }
+
 }
